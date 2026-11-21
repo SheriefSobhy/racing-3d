@@ -127,7 +127,7 @@ button {
   align-items: flex-end;
   pointer-events: none;
 }
-.steer, .actions { display: flex; gap: 14px; align-items: flex-end; }
+.pad { display: flex; gap: 14px; align-items: flex-end; }
 .ctl {
   width: 86px; height: 86px;
   border-radius: 50%;
@@ -144,7 +144,7 @@ button {
 .ctl.nitro { width: 100px; height: 100px; border-color: rgba(120, 210, 255, 0.5); background: rgba(40, 140, 255, 0.15); margin-bottom: 26px; }
 .ctl.nitro.ready { border-color: #8fe0ff; background: rgba(40, 160, 255, 0.4); box-shadow: 0 0 18px rgba(42, 180, 255, 0.8); }
 .ctl.nitro.active { background: rgba(80, 200, 255, 0.75); }
-body.tilt-mode .steer { visibility: hidden; }
+body.tilt-mode .arrow-btn { visibility: hidden; }
 
 #popups {
   position: absolute;
@@ -362,7 +362,7 @@ body.tilt-mode .steer { visibility: hidden; }
   .ctl { width: 72px; height: 72px; font-size: 24px; }
   .ctl.nitro { width: 84px; height: 84px; margin-bottom: 0; }
   .ctl.act { font-size: 13px; }
-  .steer, .actions { gap: 10px; }
+  .pad { gap: 10px; }
   #speedo { bottom: calc(var(--pad-b) + 100px); }
   #popups { top: 22%; }
   .popup { font-size: 20px; }

@@ -72,13 +72,14 @@
         <div class="nitro-bar"><div id="nitroFill"></div></div>
       </div>
       <div id="controls">
-        <div class="steer">
-          <button id="btnLeft" class="ctl" aria-label="Steer left">&#9664;</button>
-          <button id="btnRight" class="ctl" aria-label="Steer right">&#9654;</button>
-        </div>
-        <div class="actions">
+        <!-- Left thumb: steer left (corner) + drift. Right thumb: nitro + steer right (corner). -->
+        <div class="pad">
+          <button id="btnLeft" class="ctl arrow-btn" aria-label="Steer left">&#9664;</button>
           <button id="btnDrift" class="ctl act drift">DRIFT</button>
+        </div>
+        <div class="pad">
           <button id="btnNitro" class="ctl act nitro">NITRO</button>
+          <button id="btnRight" class="ctl arrow-btn" aria-label="Steer right">&#9654;</button>
         </div>
       </div>
     </div>
