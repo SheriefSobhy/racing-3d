@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1020" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Highway Blitz</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b1020'/%3E%3Cpath d='M14 42l8-16h20l8 16z' fill='%23ff3b5c'/%3E%3Ccircle cx='22' cy='44' r='5' fill='%23fff'/%3E%3Ccircle cx='42' cy='44' r='5' fill='%23fff'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Russo+One&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <div id="app">
+    <div id="nitroFx"></div>
+    <div id="flash"></div>
+
+    <!-- In-race HUD -->
+    <div id="hud" class="hidden">
+      <div class="hud-top">
+        <div class="hud-left">
+          <div class="score-box"><small>SCORE</small><span id="score">0</span></div>
+          <div class="coin-box"><i class="coin-ico"></i><span id="coins">0</span></div>
+        </div>
+        <div id="lives" class="lives"><i></i><i></i><i></i></div>
+        <button id="btnPause" class="icon-btn" aria-label="Pause"><span></span><span></span></button>
+      </div>
+      <div id="popups"></div>
+      <div id="speedo">
+        <div class="speed-row"><span id="speed">0</span><small>KM/H</small></div>
+        <div class="nitro-bar"><div id="nitroFill"></div></div>
+      </div>
+      <div id="controls">
+        <div class="steer">
+          <button id="btnLeft" class="ctl" aria-label="Steer left">&#9664;</button>
+          <button id="btnRight" class="ctl" aria-label="Steer right">&#9654;</button>
+        </div>
+        <div class="actions">
+          <button id="btnDrift" class="ctl act drift">DRIFT</button>
+          <button id="btnNitro" class="ctl act nitro">NITRO</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Start screen -->
+    <div id="menu" class="screen menu hidden">
+      <div class="menu-head">
+        <div class="title"><span class="t1">HIGHWAY</span><span class="t2">BLITZ</span></div>
+        <div class="menu-stats">
+          <div>BEST <b id="menuBest">0</b></div>
+          <div><i class="coin-ico"></i> <b id="menuCoins">0</b></div>
+        </div>
+      </div>
+      <div class="menu-bottom">
+        <div class="btn-row">
+          <button class="btn primary" id="btnPlay"><span>RACE</span></button>
+          <button class="btn" id="btnGarage"><span>GARAGE</span></button>
+        </div>
+        <div class="menu-opts">
+          <div class="seg" id="steerSeg">
+            <span>STEERING</span>
+            <button data-mode="buttons">BUTTONS</button>
+            <button data-mode="tilt">TILT</button>
+          </div>
+          <button class="btn small ghost" id="btnFull"><span>FULLSCREEN</span></button>
+        </div>
+        <p class="hint">Steer with &#9664; &#9654; or tilt &middot; NITRO boosts &middot; hold DRIFT through curves to fill nitro &middot; pass close to traffic for bonus points</p>
+        <p class="hint portrait-only">Tip: turn your phone sideways for the best view</p>
+      </div>
+    </div>
+
+    <!-- Pause -->
+    <div id="pause" class="screen dim hidden">
+      <h2>PAUSED</h2>
+      <div class="btn-col">
+        <button class="btn primary" id="btnResume"><span>RESUME</span></button>
+        <button class="btn" id="btnRestart"><span>RESTART</span></button>
+        <button class="btn" id="btnQuit"><span>MAIN MENU</span></button>
+      </div>
+    </div>
+
+    <!-- Game over -->
+    <div id="gameover" class="screen dim hidden">
+      <h2 class="wreck">WRECKED!</h2>
+      <div id="newBest" class="badge hidden">NEW BEST!</div>
+      <div class="result">
+        <div class="row"><span>SCORE</span><b id="goScore">0</b></div>
+        <div class="row"><span>BEST</span><b id="goBest">0</b></div>
+        <div class="row"><span>DISTANCE</span><b id="goDist">0 m</b></div>
+        <div class="row"><span>NEAR MISSES</span><b id="goNear">0</b></div>
+        <div class="row"><span>COINS</span><b id="goCoins">0</b></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn primary" id="btnAgain"><span>RACE AGAIN</span></button>
+        <button class="btn" id="btnGoGarage"><span>GARAGE</span></button>
+        <button class="btn" id="btnGoMenu"><span>MENU</span></button>
+      </div>
+    </div>
+
+    <!-- Garage -->
+    <div id="garage" class="screen garage hidden">
+      <div class="garage-top">
+        <button class="btn small" id="btnBack"><span>&#9664; BACK</span></button>
+        <div class="wallet"><i class="coin-ico"></i> <b id="garageCoins">0</b></div>
+      </div>
+      <div class="garage-nav">
+        <button class="arrow" id="carPrev" aria-label="Previous car">&#8249;</button>
+        <button class="arrow" id="carNext" aria-label="Next car">&#8250;</button>
+      </div>
+      <div class="garage-panel">
+        <div class="car-count" id="carCount">1 / 4</div>
+        <div class="car-name" id="carName">CAR</div>
+        <div class="stat"><span>TOP SPEED</span><div class="bar"><i id="stSpeed"></i></div><em id="stSpeedV">0</em></div>
+        <div class="stat"><span>ACCEL</span><div class="bar"><i id="stAccel"></i></div><em id="stAccelV">0</em></div>
+        <div class="stat"><span>HANDLING</span><div class="bar"><i id="stHandling"></i></div><em id="stHandlingV">0</em></div>
+        <div class="stat"><span>NITRO</span><div class="bar"><i id="stNitro"></i></div><em id="stNitroV">0</em></div>
+        <button class="btn primary" id="carAction"><span>SELECT</span></button>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

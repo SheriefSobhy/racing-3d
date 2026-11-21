@@ -1,0 +1,542 @@
+import * as THREE from 'three';
+import './style.css';
+import { frame } from './track.js';
+import { World } from './world.js';
+import { CARS, buildPlayerCar, makeTextures } from './cars.js';
+import { Traffic } from './traffic.js';
+import { Pickups } from './pickups.js';
+import { Player, START_S } from './player.js';
+import { Input } from './input.js';
+import { Particles } from './effects.js';
+import { UI } from './ui.js';
+import { loadSave, writeSave } from './storage.js';
+
+const DEBUG = /(^|[?&])debug(=|&|$)/.test(location.search.slice(1));
+const MAX_LIVES = 3;
+
+// ---------- Renderer / scene ----------
+const maxPR = Math.min(window.devicePixelRatio || 1, 2);
+let pixelRatio = maxPR;
+const renderer = new THREE.WebGLRenderer({ antialias: maxPR < 1.5, powerPreference: 'high-performance' });
+renderer.setPixelRatio(pixelRatio);
+renderer.setSize(innerWidth, innerHeight);
+renderer.domElement.id = 'c';
+document.getElementById('app').prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.3, 1200);
+let baseFov = 62;
+
+const tex = makeTextures();
+const world = new World(scene, tex);
+const traffic = new Traffic(scene, tex);
+const pickups = new Pickups(scene);
+const smoke = new Particles(scene, tex.smoke, 26, false);
+const sparks = new Particles(scene, tex.glow, 40, true);
+const player = new Player();
+const input = new Input();
+const ui = new UI();
+const save = loadSave();
+if (!CARS.some((c) => c.id === save.selected)) save.selected = 'vortex';
+
+const specOf = (id) => CARS.find((c) => c.id === id) || CARS[0];
+const models = {};
+for (const spec of CARS) models[spec.id] = buildPlayerCar(spec, tex);
+let car = null;
+function showCar(id) {
+  if (car) scene.remove(car.root);
+  car = models[id];
+  scene.add(car.root);
+  car.flames.visible = false;
+}
+
+// ---------- Game state ----------
+const game = {
+  state: 'menu', // menu | garage | playing | crashing | paused | gameover
+  score: 0,
+  coins: 0,
+  crashes: 0,
+  combo: 0,
+  comboTimer: 0,
+  nearMisses: 0,
+  driftPts: 0,
+  shake: 0,
+  overTimer: 0,
+  saveDirty: false,
+};
+let garageIndex = 0;
+let orbit = 0;
+let time = 0;
+
+function flushSave() {
+  if (game.saveDirty) {
+    writeSave(save);
+    game.saveDirty = false;
+  }
+}
+
+function setState(s) {
+  game.state = s;
+  const map = { menu: 'menu', garage: 'garage', playing: 'hud', crashing: 'hud', paused: 'pause', gameover: 'gameover' };
+  ui.show(map[s]);
+  if (s === 'menu') ui.menu(save);
+  if (s !== 'playing') input.releaseAll();
+}
+
+function toMenu() {
+  flushSave();
+  traffic.reset(player.s);
+  pickups.reset(player.s);
+  player.reset();
+  player.x = 0;
+  showCar(save.selected);
+  smoke.clear();
+  sparks.clear();
+  world.update(player.s, 300, Infinity);
+  setState('menu');
+}
+
+async function startRace() {
+  if (save.steering === 'tilt') input.tiltMode = await input.enableTilt();
+  document.body.classList.toggle('tilt-mode', input.tiltMode);
+  showCar(save.selected);
+  player.reset();
+  player.spec = specOf(save.selected);
+  traffic.reset(player.s);
+  pickups.reset(player.s);
+  smoke.clear();
+  sparks.clear();
+  Object.assign(game, {
+    score: 0, coins: 0, crashes: 0, combo: 0, comboTimer: 0, nearMisses: 0, driftPts: 0, shake: 0, overTimer: 0,
+  });
+  world.update(player.s, 40, Infinity);
+  camState.init = false;
+  ui.resetHud();
+  setState('playing');
+  ui.popup('GO!', 'nitro');
+}
+
+function pause() {
+  if (game.state !== 'playing') return;
+  flushSave();
+  setState('paused');
+}
+function resume() {
+  if (game.state !== 'paused') return;
+  setState('playing');
+  last = performance.now();
+}
+
+function gameOver() {
+  const score = Math.floor(game.score);
+  const isBest = score > save.best;
+  if (isBest) save.best = score;
+  game.saveDirty = true;
+  flushSave();
+  ui.gameOver({
+    score, best: save.best, isBest, coins: game.coins, nearMisses: game.nearMisses, distance: player.s - START_S,
+  });
+  orbit = Math.PI * 0.8;
+  setState('gameover');
+}
+
+function openGarage() {
+  garageIndex = Math.max(0, CARS.findIndex((c) => c.id === save.selected));
+  if (game.state === 'gameover') {
+    traffic.reset(player.s);
+    pickups.reset(player.s);
+    player.x = 0;
+  }
+  refreshGarage();
+  setState('garage');
+}
+function refreshGarage() {
+  const spec = CARS[garageIndex];
+  showCar(spec.id);
+  ui.garage(spec, garageIndex, CARS.length, save);
+}
+function garageAction() {
+  const spec = CARS[garageIndex];
+  if (!save.owned.includes(spec.id)) {
+    if (save.coins < spec.price) return;
+    save.coins -= spec.price;
+    save.owned.push(spec.id);
+  }
+  save.selected = spec.id;
+  game.saveDirty = true;
+  flushSave();
+  refreshGarage();
+}
+
+// ---------- Gameplay callbacks ----------
+const v3 = new THREE.Vector3();
+const handlers = {
+  canCrash: () => game.state === 'playing',
+  onCrash(other, side) {
+    game.crashes++;
+    player.v *= 0.3;
+    player.xv = -side * 5;
+    player.invuln = 2;
+    game.shake = 0.9;
+    game.combo = 0;
+    ui.flash();
+    if (navigator.vibrate) navigator.vibrate(160);
+    car.root.updateMatrixWorld();
+    car.root.localToWorld(v3.set(side * 0.9, 0.7, -1.8));
+    for (let i = 0; i < 12; i++) {
+      sparks.emit(v3, {
+        color: i % 2 ? 0xffb040 : 0xffffff, size: 0.5, grow: -0.4, life: 0.5,
+        vx: (Math.random() - 0.5) * 10, vy: 2 + Math.random() * 5, vz: (Math.random() - 0.5) * 10,
+      });
+    }
+    if (game.crashes >= MAX_LIVES) {
+      game.state = 'crashing';
+      game.overTimer = 1.5;
+      ui.popup('WRECKED!', 'wreck');
+    } else {
+      ui.popup(`CRASH!  ${MAX_LIVES - game.crashes} LEFT`, 'crash');
+    }
+  },
+  onNearMiss() {
+    game.comboTimer = 3;
+    game.combo = Math.min(game.combo + 1, 5);
+    const pts = 150 * game.combo;
+    game.score += pts;
+    game.nearMisses++;
+    player.nitro = Math.min(1, player.nitro + 0.05);
+    ui.popup(game.combo > 1 ? `NEAR MISS x${game.combo}  +${pts}` : `NEAR MISS  +${pts}`, 'near');
+  },
+  onCoin(c) {
+    game.coins++;
+    game.score += 10;
+    save.coins++;
+    game.saveDirty = true;
+    pickups.worldPos(c, 0.95, v3);
+    for (let i = 0; i < 3; i++) {
+      sparks.emit(v3, {
+        color: 0xffd24a, size: 0.8, grow: 1.5, life: 0.35,
+        vx: (Math.random() - 0.5) * 3, vy: 2 + Math.random() * 2, vz: (Math.random() - 0.5) * 3,
+      });
+    }
+  },
+  onNitro(c) {
+    player.nitro = Math.min(1, player.nitro + 0.4);
+    game.score += 50;
+    ui.popup('NITRO  +40%', 'nitro');
+    pickups.worldPos(c, 1.2, v3);
+    for (let i = 0; i < 6; i++) {
+      sparks.emit(v3, {
+        color: 0x5cc8ff, size: 1.2, grow: 2, life: 0.4,
+        vx: (Math.random() - 0.5) * 5, vy: Math.random() * 4, vz: (Math.random() - 0.5) * 5,
+      });
+    }
+  },
+};
+
+// ---------- Car visuals ----------
+const fTmp = {};
+function placeOnRoad(obj, s, x, yaw) {
+  const f = frame(s, fTmp);
+  obj.position.set(f.x + f.rx * x, f.y, f.z + f.rz * x);
+  obj.rotation.set(Math.atan(f.slope), -(f.th + yaw), 0);
+}
+
+let smokeAcc = 0;
+function syncCar(dt, moving) {
+  placeOnRoad(car.root, player.s, player.x, player.yaw);
+  car.body.rotation.z = player.roll;
+  if (moving) {
+    const spin = (player.v * dt) / 0.34;
+    for (const w of car.spins) w.rotation.x -= spin;
+  }
+  for (const w of car.steers) w.rotation.y = -player.steer * 0.4;
+  car.flames.visible = player.boosting;
+  if (player.boosting) {
+    const s = 0.75 + Math.random() * 0.5;
+    car.flames.scale.set(1, 1, s);
+  }
+  car.glowMat.opacity = player.invuln > 0 ? 1 : 0.85;
+  car.body.visible = player.invuln <= 0 || Math.floor(player.invuln * 12) % 2 === 0;
+
+  if (!moving) return;
+  car.root.updateMatrixWorld();
+  if (player.drifting || player.scraping) {
+    smokeAcc += dt * 30;
+    while (smokeAcc >= 1) {
+      smokeAcc -= 1;
+      if (player.drifting) {
+        for (const x of [-0.9, 0.9]) {
+          car.root.localToWorld(v3.set(x, 0.25, 1.4));
+          smoke.emit(v3, { color: 0xdddddd, size: 0.8, grow: 3.2, life: 0.75, opacity: 0.55, vy: 0.8 });
+        }
+      }
+      if (player.scraping) {
+        car.root.localToWorld(v3.set(Math.sign(player.x) * 1.0, 0.5, (Math.random() - 0.5) * 3));
+        sparks.emit(v3, {
+          color: 0xffa030, size: 0.35, grow: -0.3, life: 0.35,
+          vx: (Math.random() - 0.5) * 4, vy: 1 + Math.random() * 3, vz: (Math.random() - 0.5) * 4,
+        });
+      }
+    }
+  }
+}
+
+// ---------- Cameras ----------
+const camState = { init: false, x: 0, dist: 7, h: 2.7, fov: 62 };
+const look = new THREE.Vector3();
+function chaseCamera(dt) {
+  const k = camState.init ? 1 - Math.exp(-dt * 6) : 1;
+  camState.init = true;
+  camState.x += (player.x * 0.82 - camState.x) * k;
+  camState.dist += ((player.boosting ? 8.2 : 7) - camState.dist) * k;
+  const portrait = camera.aspect < 1;
+  const h = portrait ? 3.2 : 2.7;
+  const f = frame(player.s - camState.dist, fTmp);
+  camera.position.set(f.x + f.rx * camState.x, f.y + h, f.z + f.rz * camState.x);
+  const f2 = frame(player.s + 10, fTmp);
+  const lx = player.x * 0.7;
+  look.set(f2.x + f2.rx * lx, f2.y + 0.9, f2.z + f2.rz * lx);
+  if (game.shake > 0) {
+    const a = game.shake * game.shake;
+    camera.position.x += (Math.random() - 0.5) * a;
+    camera.position.y += (Math.random() - 0.5) * a;
+    camera.position.z += (Math.random() - 0.5) * a;
+    game.shake = Math.max(0, game.shake - dt * 1.4);
+  }
+  camera.lookAt(look);
+  const spec = player.spec;
+  const targetFov = baseFov + Math.min(1, player.v / spec.maxSpeed) * 7 + (player.boosting ? 9 : 0);
+  camState.fov += (targetFov - camState.fov) * (1 - Math.exp(-dt * 4));
+  if (Math.abs(camera.fov - camState.fov) > 0.01) {
+    camera.fov = camState.fov;
+    camera.updateProjectionMatrix();
+  }
+}
+
+function orbitCamera(dt, radius, height, speed) {
+  orbit += dt * speed;
+  const p = car.root.position;
+  camera.position.set(p.x + Math.sin(orbit) * radius, p.y + height, p.z + Math.cos(orbit) * radius);
+  camera.lookAt(p.x, p.y + 0.6, p.z);
+  if (camera.fov !== baseFov) {
+    camera.fov = baseFov;
+    camera.updateProjectionMatrix();
+  }
+}
+
+// ---------- Update ----------
+function updateRace(dt) {
+  const control = game.state === 'playing';
+  player.update(dt, input, control);
+  traffic.update(dt, player, handlers);
+  pickups.update(dt, player, handlers);
+  world.update(player.s, 40, 1);
+
+  if (control) {
+    game.score += player.v * dt * 0.5 * (player.boosting ? 1.5 : 1);
+    if (player.drifting) {
+      game.driftPts += player.v * dt * 0.8;
+    } else if (game.driftPts > 0) {
+      const pts = Math.round(game.driftPts);
+      if (pts >= 25) {
+        game.score += pts;
+        ui.popup(`DRIFT  +${pts}`, 'drift');
+      }
+      game.driftPts = 0;
+    }
+  }
+  if (game.comboTimer > 0 && (game.comboTimer -= dt) <= 0) game.combo = 0;
+
+  syncCar(dt, true);
+  chaseCamera(dt);
+
+  ui.hud({
+    score: Math.floor(game.score),
+    coins: game.coins,
+    speed: Math.round(player.v * 3.6),
+    nitro: Math.round(player.nitro * 100),
+    boosting: player.boosting,
+    lives: MAX_LIVES - game.crashes,
+  });
+
+  if (game.state === 'crashing' && (game.overTimer -= dt) <= 0) gameOver();
+}
+
+function updateShowroom(dt) {
+  world.update(player.s, 300, 2);
+  player.steer = 0;
+  player.yaw = 0;
+  player.roll = 0;
+  player.boosting = false;
+  player.drifting = false;
+  player.scraping = false;
+  player.invuln = 0;
+  syncCar(dt, false);
+  if (game.state === 'garage') orbitCamera(dt, 5.6, 1.5, 0.35);
+  else if (game.state === 'gameover') orbitCamera(dt, 8.5, 2.6, 0.15);
+  else orbitCamera(dt, 7.5, 2.2, 0.22);
+}
+
+// ---------- Resize ----------
+function resize() {
+  const w = innerWidth;
+  const h = innerHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  // Keep a usable horizontal field of view in portrait.
+  baseFov = camera.aspect >= 1 ? 62 : Math.min(92, (2 * Math.atan(Math.tan((66 * Math.PI) / 360) / camera.aspect) * 180) / Math.PI);
+  camera.fov = baseFov;
+  camState.fov = baseFov;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+addEventListener('orientationchange', () => setTimeout(resize, 200));
+
+// ---------- UI wiring ----------
+const $ = (id) => document.getElementById(id);
+const tap = (id, fn) => $(id).addEventListener('click', fn);
+input.bindButton($('btnLeft'), 'left');
+input.bindButton($('btnRight'), 'right');
+input.bindButton($('btnNitro'), 'nitro');
+input.bindButton($('btnDrift'), 'drift');
+
+tap('btnPlay', startRace);
+tap('btnGarage', openGarage);
+tap('btnPause', pause);
+tap('btnResume', resume);
+tap('btnRestart', startRace);
+tap('btnQuit', toMenu);
+tap('btnAgain', startRace);
+tap('btnGoGarage', openGarage);
+tap('btnGoMenu', toMenu);
+tap('btnBack', () => {
+  showCar(save.selected);
+  setState('menu');
+});
+tap('carPrev', () => {
+  garageIndex = (garageIndex + CARS.length - 1) % CARS.length;
+  refreshGarage();
+});
+tap('carNext', () => {
+  garageIndex = (garageIndex + 1) % CARS.length;
+  refreshGarage();
+});
+tap('carAction', garageAction);
+
+for (const b of $('steerSeg').querySelectorAll('button')) {
+  b.addEventListener('click', async () => {
+    let mode = b.dataset.mode;
+    if (mode === 'tilt' && !(await input.enableTilt())) {
+      mode = 'buttons';
+      alert('Tilt steering is not available on this device.');
+    }
+    save.steering = mode;
+    game.saveDirty = true;
+    flushSave();
+    ui.menu(save);
+  });
+}
+
+const fsBtn = $('btnFull');
+const root = document.documentElement;
+if (!root.requestFullscreen && !root.webkitRequestFullscreen) fsBtn.classList.add('hidden');
+fsBtn.addEventListener('click', () => {
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+  } else {
+    const p = (root.requestFullscreen || root.webkitRequestFullscreen).call(root);
+    if (p && p.catch) p.catch(() => {});
+  }
+});
+
+input.onKey = (code) => {
+  if (code === 'Escape' || code === 'KeyP') {
+    if (game.state === 'playing') pause();
+    else if (game.state === 'paused') resume();
+  } else if (code === 'Enter' && (game.state === 'menu' || game.state === 'gameover')) {
+    startRace();
+  }
+};
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    pause();
+    flushSave();
+  }
+});
+addEventListener('pagehide', flushSave);
+
+// ---------- Debug FPS ----------
+let fpsEl = null;
+if (DEBUG) {
+  fpsEl = document.createElement('div');
+  fpsEl.id = 'fps';
+  document.body.appendChild(fpsEl);
+}
+let fpsFrames = 0;
+let fpsTime = 0;
+let perfFrames = 0;
+let perfTime = 0;
+
+// ---------- Loop ----------
+let last = performance.now();
+function loop(now) {
+  requestAnimationFrame(loop);
+  let dt = (now - last) / 1000;
+  last = now;
+  if (!(dt > 0)) dt = 0;
+  const rawDt = dt;
+  if (dt > 0.05) dt = 0.05;
+  time += dt;
+
+  switch (game.state) {
+    case 'playing':
+    case 'crashing':
+      updateRace(dt);
+      break;
+    case 'menu':
+    case 'garage':
+    case 'gameover':
+      updateShowroom(dt);
+      break;
+    default:
+      break;
+  }
+  if (game.state !== 'paused') {
+    smoke.update(dt);
+    sparks.update(dt);
+  }
+  world.follow(camera);
+  renderer.render(scene, camera);
+
+  // Adaptive resolution: step down if the device can't hold ~50 fps.
+  if (game.state === 'playing') {
+    perfFrames++;
+    perfTime += rawDt;
+    if (perfTime > 2.5) {
+      if (perfFrames / perfTime < 48 && pixelRatio > 1) {
+        pixelRatio = Math.max(1, pixelRatio - 0.25);
+        renderer.setPixelRatio(pixelRatio);
+      }
+      perfFrames = 0;
+      perfTime = 0;
+    }
+  }
+
+  if (fpsEl) {
+    fpsFrames++;
+    fpsTime += rawDt;
+    if (fpsTime >= 0.5) {
+      const info = renderer.info.render;
+      fpsEl.textContent = `${Math.round(fpsFrames / fpsTime)} FPS  ·  ${pixelRatio.toFixed(2)}x  ·  ${info.calls} calls  ·  ${(info.triangles / 1000).toFixed(1)}k tris`;
+      fpsFrames = 0;
+      fpsTime = 0;
+    }
+  }
+}
+
+resize();
+toMenu();
+if (DEBUG) window.__hb = { game, player, traffic, save };
+if (DEBUG && /autostart/.test(location.search)) startRace();
+requestAnimationFrame(loop);
