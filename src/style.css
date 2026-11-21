@@ -369,3 +369,122 @@ body.tilt-mode .steer { visibility: hidden; }
   .title .t2 { font-size: 54px; }
   .garage-panel { margin-bottom: 8px; }
 }
+
+/* ---------- Camera button ---------- */
+.hud-right { display: flex; gap: 10px; align-items: flex-start; }
+.hud-right .icon-btn { width: 52px; height: 52px; }
+.cam-btn svg { width: 28px; height: 28px; }
+.cam-btn:active { background: rgba(255, 255, 255, 0.3); }
+.btn.tall { min-height: 44px; }
+#pauseCamName { color: var(--gold); font-weight: normal; }
+@media (orientation: portrait) {
+  .hud-right { flex-direction: column-reverse; gap: 8px; }
+}
+
+/* ---------- Settings ---------- */
+#settings { z-index: 5; }
+.set-panel {
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  width: min(720px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.set-head, .set-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  gap: 12px;
+}
+.set-head { border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
+.set-foot { border-top: 1px solid rgba(255, 255, 255, 0.1); justify-content: center; }
+.set-head h3 { margin: 0; font-size: 22px; font-style: italic; letter-spacing: 1px; }
+.set-head .btn, .set-foot .btn { min-height: 44px; }
+.set-body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  padding: 10px 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 8px 22px;
+  text-align: left;
+}
+.set-row { display: flex; flex-direction: column; gap: 2px; min-height: 52px; justify-content: center; }
+.set-row.wide { grid-column: 1 / -1; }
+.set-row .lbl { font-size: 12px; opacity: 0.85; letter-spacing: 0.5px; }
+.set-row .lbl em { font-style: normal; color: var(--gold); margin-left: 6px; }
+.set-row.disabled { opacity: 0.35; }
+.toggle-row { flex-direction: row; align-items: center; justify-content: space-between; }
+.view-seg { align-self: stretch; }
+.view-seg button { flex: 1; min-height: 44px; font-size: 14px; }
+.set-note { grid-column: 1 / -1; margin: 0; font-size: 11px; opacity: 0.6; font-family: system-ui, sans-serif; font-weight: 600; }
+
+.set-row input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 40px;
+  background: transparent;
+  margin: 0;
+  touch-action: none;
+}
+.set-row input[type='range']::-webkit-slider-runnable-track {
+  height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.2);
+}
+.set-row input[type='range']::-moz-range-track {
+  height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.2);
+}
+.set-row input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 30px; height: 30px; margin-top: -11px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.set-row input[type='range']::-moz-range-thumb {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid #fff;
+}
+.set-row input[type='range']:disabled::-webkit-slider-thumb { background: #888; }
+
+.toggle {
+  width: 76px; height: 40px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.18);
+  position: relative;
+  flex: none;
+  transition: background 0.15s;
+}
+.toggle::after {
+  content: 'OFF';
+  position: absolute;
+  top: 4px; left: 4px;
+  width: 40px; height: 32px;
+  border-radius: 16px;
+  background: #fff;
+  color: #222;
+  font-size: 11px;
+  line-height: 32px;
+  text-align: center;
+  transition: transform 0.15s;
+}
+.toggle[aria-pressed='true'] { background: var(--accent); }
+.toggle[aria-pressed='true']::after { content: 'ON'; transform: translateX(28px); }
+
+@media (max-height: 420px) {
+  .set-head, .set-foot { padding: 6px 14px; }
+  .set-head h3 { font-size: 18px; }
+  .set-body { padding: 6px 14px; gap: 2px 22px; }
+}
+.set-body { flex: 1 1 auto; min-height: 0; }
+.set-body button { touch-action: manipulation; }
+.popup.cam { color: #fff; font-size: 18px; }

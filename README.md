@@ -9,11 +9,12 @@ A low-poly 3D arcade highway racer for the phone browser, built with Three.js an
 - The car accelerates by itself. Steer with the ◀ ▶ buttons, or pick **Tilt** on the start screen.
 - **NITRO** gives a burst of speed. The bar fills slowly over time, from blue nitro pickups, from near misses, and by drifting.
 - Hold **DRIFT** through curves to slide around them and fill nitro faster.
+- Tap the **camera** button (top right) to switch views: Chase, Far chase, Hood, Bumper. **SETTINGS** (Start or Pause menu) sets field of view, camera distance/height, smooth follow, camera shake and the speed effect. Settings are saved on the device.
 - Dodge traffic: a crash slows you down, and 3 crashes end the run.
 - Score comes from distance, coins, drifts and near misses (pass close to traffic; chain them for a combo).
 - Spend coins in the **Garage** to unlock 3 more cars.
 
-Keyboard: arrows / A-D steer, Space / W nitro, Shift / S drift, P / Esc pause.
+Keyboard: arrows / A-D steer, Space / W nitro, Shift / S drift, P / Esc pause, C camera view.
 
 Add `?debug` to the URL to show an FPS counter.
 

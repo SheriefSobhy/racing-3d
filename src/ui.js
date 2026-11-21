@@ -1,6 +1,16 @@
 const $ = (id) => document.getElementById(id);
 
-const SCREENS = ['menu', 'pause', 'gameover', 'garage'];
+import { SETTING_RANGES } from './storage.js';
+import { viewName, isChaseView } from './camera.js';
+
+const SCREENS = ['menu', 'pause', 'gameover', 'garage', 'settings'];
+
+const SLIDERS = [
+  ['sFov', 'vFov', 'fov', (v) => v + '°'],
+  ['sFollow', 'vFollow', 'follow', (v) => v.toFixed(1)],
+  ['sDist', 'vDist', 'dist', (v) => v.toFixed(1) + ' m'],
+  ['sHeight', 'vHeight', 'height', (v) => v.toFixed(1) + ' m'],
+];
 
 export class UI {
   constructor() {
@@ -112,5 +122,31 @@ export class UI {
       label.textContent = `LOCKED · ${spec.price}`;
       btn.disabled = true;
     }
+  }
+
+  camView(view) {
+    $('pauseCamName').textContent = viewName(view);
+  }
+
+  /** Reflect the current settings in the settings screen controls. */
+  settings(st) {
+    for (const [inputId, valId, key, fmt] of SLIDERS) {
+      const el = $(inputId);
+      const [min, max, step] = SETTING_RANGES[key];
+      el.min = min;
+      el.max = max;
+      el.step = step;
+      el.value = st[key];
+      $(valId).textContent = fmt(Number(st[key]));
+    }
+    for (const b of $('viewSeg').querySelectorAll('button')) b.classList.toggle('on', b.dataset.view === st.view);
+    const chase = isChaseView(st.view);
+    for (const row of document.querySelectorAll('#settings .chase-only')) {
+      row.classList.toggle('disabled', !chase);
+      row.querySelector('input').disabled = !chase;
+    }
+    $('tShake').setAttribute('aria-pressed', String(st.shake));
+    $('tSpeedFx').setAttribute('aria-pressed', String(st.speedFx));
+    this.camView(st.view);
   }
 }

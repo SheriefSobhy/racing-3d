@@ -9,7 +9,8 @@ import { Player, START_S } from './player.js';
 import { Input } from './input.js';
 import { Particles } from './effects.js';
 import { UI } from './ui.js';
-import { loadSave, writeSave } from './storage.js';
+import { loadSave, writeSave, loadSettings, writeSettings, settingsDefaults } from './storage.js';
+import { CameraRig, VIEWS, viewName } from './camera.js';
 
 const DEBUG = /(^|[?&])debug(=|&|$)/.test(location.search.slice(1));
 const MAX_LIVES = 3;
@@ -25,7 +26,8 @@ document.getElementById('app').prepend(renderer.domElement);
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.3, 1200);
-let baseFov = 62;
+const settings = loadSettings();
+const rig = new CameraRig(camera, settings);
 
 const tex = makeTextures();
 const world = new World(scene, tex);
@@ -60,7 +62,6 @@ const game = {
   comboTimer: 0,
   nearMisses: 0,
   driftPts: 0,
-  shake: 0,
   overTimer: 0,
   saveDirty: false,
 };
@@ -77,7 +78,9 @@ function flushSave() {
 
 function setState(s) {
   game.state = s;
-  const map = { menu: 'menu', garage: 'garage', playing: 'hud', crashing: 'hud', paused: 'pause', gameover: 'gameover' };
+  const map = {
+    menu: 'menu', garage: 'garage', playing: 'hud', crashing: 'hud', paused: 'pause', gameover: 'gameover', settings: 'settings',
+  };
   ui.show(map[s]);
   if (s === 'menu') ui.menu(save);
   if (s !== 'playing') input.releaseAll();
@@ -107,10 +110,11 @@ async function startRace() {
   smoke.clear();
   sparks.clear();
   Object.assign(game, {
-    score: 0, coins: 0, crashes: 0, combo: 0, comboTimer: 0, nearMisses: 0, driftPts: 0, shake: 0, overTimer: 0,
+    score: 0, coins: 0, crashes: 0, combo: 0, comboTimer: 0, nearMisses: 0, driftPts: 0, overTimer: 0,
   });
   world.update(player.s, 40, Infinity);
-  camState.init = false;
+  rig.reset();
+  rig.shake = 0;
   ui.resetHud();
   setState('playing');
   ui.popup('GO!', 'nitro');
@@ -177,7 +181,7 @@ const handlers = {
     player.v *= 0.3;
     player.xv = -side * 5;
     player.invuln = 2;
-    game.shake = 0.9;
+    rig.kick(0.9);
     game.combo = 0;
     ui.flash();
     if (navigator.vibrate) navigator.vibrate(160);
@@ -282,46 +286,44 @@ function syncCar(dt, moving) {
 }
 
 // ---------- Cameras ----------
-const camState = { init: false, x: 0, dist: 7, h: 2.7, fov: 62 };
-const look = new THREE.Vector3();
-function chaseCamera(dt) {
-  const k = camState.init ? 1 - Math.exp(-dt * 6) : 1;
-  camState.init = true;
-  camState.x += (player.x * 0.82 - camState.x) * k;
-  camState.dist += ((player.boosting ? 8.2 : 7) - camState.dist) * k;
-  const portrait = camera.aspect < 1;
-  const h = portrait ? 3.2 : 2.7;
-  const f = frame(player.s - camState.dist, fTmp);
-  camera.position.set(f.x + f.rx * camState.x, f.y + h, f.z + f.rz * camState.x);
-  const f2 = frame(player.s + 10, fTmp);
-  const lx = player.x * 0.7;
-  look.set(f2.x + f2.rx * lx, f2.y + 0.9, f2.z + f2.rz * lx);
-  if (game.shake > 0) {
-    const a = game.shake * game.shake;
-    camera.position.x += (Math.random() - 0.5) * a;
-    camera.position.y += (Math.random() - 0.5) * a;
-    camera.position.z += (Math.random() - 0.5) * a;
-    game.shake = Math.max(0, game.shake - dt * 1.4);
-  }
-  camera.lookAt(look);
-  const spec = player.spec;
-  const targetFov = baseFov + Math.min(1, player.v / spec.maxSpeed) * 7 + (player.boosting ? 9 : 0);
-  camState.fov += (targetFov - camState.fov) * (1 - Math.exp(-dt * 4));
-  if (Math.abs(camera.fov - camState.fov) > 0.01) {
-    camera.fov = camState.fov;
-    camera.updateProjectionMatrix();
-  }
-}
-
 function orbitCamera(dt, radius, height, speed) {
   orbit += dt * speed;
   const p = car.root.position;
   camera.position.set(p.x + Math.sin(orbit) * radius, p.y + height, p.z + Math.cos(orbit) * radius);
   camera.lookAt(p.x, p.y + 0.6, p.z);
-  if (camera.fov !== baseFov) {
-    camera.fov = baseFov;
+  if (camera.fov !== rig.baseFov) {
+    camera.fov = rig.baseFov;
     camera.updateProjectionMatrix();
   }
+}
+
+// ---------- Camera settings ----------
+let settingsReturn = 'menu';
+function saveSettings() {
+  writeSettings(settings);
+}
+function setView(id) {
+  settings.view = id;
+  saveSettings();
+  ui.camView(id);
+  if (game.state === 'settings') ui.settings(settings);
+}
+function cycleView() {
+  const i = VIEWS.findIndex((v) => v.id === settings.view);
+  setView(VIEWS[(i + 1) % VIEWS.length].id);
+  if (game.state === 'playing') ui.popup(`CAMERA: ${viewName(settings.view)}`, 'cam');
+}
+function openSettings() {
+  if (game.state !== 'menu' && game.state !== 'paused') return;
+  settingsReturn = game.state;
+  ui.settings(settings);
+  setState('settings');
+}
+function closeSettings() {
+  if (game.state !== 'settings') return;
+  saveSettings();
+  if (settingsReturn === 'paused') setState('paused');
+  else setState('menu');
 }
 
 // ---------- Update ----------
@@ -348,7 +350,7 @@ function updateRace(dt) {
   if (game.comboTimer > 0 && (game.comboTimer -= dt) <= 0) game.combo = 0;
 
   syncCar(dt, true);
-  chaseCamera(dt);
+  rig.update(dt, player, car);
 
   ui.hud({
     score: Math.floor(game.score),
@@ -383,11 +385,7 @@ function resize() {
   const h = innerHeight;
   renderer.setSize(w, h);
   camera.aspect = w / h;
-  // Keep a usable horizontal field of view in portrait.
-  baseFov = camera.aspect >= 1 ? 62 : Math.min(92, (2 * Math.atan(Math.tan((66 * Math.PI) / 360) / camera.aspect) * 180) / Math.PI);
-  camera.fov = baseFov;
-  camState.fov = baseFov;
-  camera.updateProjectionMatrix();
+  rig.resize(camera.aspect);
 }
 addEventListener('resize', resize);
 addEventListener('orientationchange', () => setTimeout(resize, 200));
@@ -423,6 +421,40 @@ tap('carNext', () => {
 });
 tap('carAction', garageAction);
 
+// Camera button: react on pointerdown so it works while other fingers hold steer/nitro.
+$('btnCam').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  if (game.state === 'playing') cycleView();
+});
+$('btnCam').addEventListener('contextmenu', (e) => e.preventDefault());
+tap('btnPauseCam', cycleView);
+tap('btnPauseSettings', openSettings);
+tap('btnSettings', openSettings);
+tap('btnSetDone', closeSettings);
+tap('btnSetReset', () => {
+  Object.assign(settings, settingsDefaults());
+  rig.resize(camera.aspect);
+  saveSettings();
+  ui.settings(settings);
+});
+for (const b of $('viewSeg').querySelectorAll('button')) b.addEventListener('click', () => setView(b.dataset.view));
+for (const el of $('settings').querySelectorAll('input[type=range]')) {
+  el.addEventListener('input', () => {
+    settings[el.dataset.key] = Number(el.value);
+    if (el.dataset.key === 'fov') rig.resize(camera.aspect);
+    ui.settings(settings);
+  });
+  el.addEventListener('change', saveSettings);
+}
+for (const b of $('settings').querySelectorAll('.toggle')) {
+  b.addEventListener('click', () => {
+    settings[b.dataset.key] = !settings[b.dataset.key];
+    saveSettings();
+    ui.settings(settings);
+  });
+}
+ui.camView(settings.view);
+
 for (const b of $('steerSeg').querySelectorAll('button')) {
   b.addEventListener('click', async () => {
     let mode = b.dataset.mode;
@@ -450,7 +482,11 @@ fsBtn.addEventListener('click', () => {
 });
 
 input.onKey = (code) => {
-  if (code === 'Escape' || code === 'KeyP') {
+  if (code === 'KeyC' && (game.state === 'playing' || game.state === 'paused')) {
+    cycleView();
+  } else if (game.state === 'settings') {
+    if (code === 'Escape') closeSettings();
+  } else if (code === 'Escape' || code === 'KeyP') {
     if (game.state === 'playing') pause();
     else if (game.state === 'paused') resume();
   } else if (code === 'Enter' && (game.state === 'menu' || game.state === 'gameover')) {
@@ -499,10 +535,18 @@ function loop(now) {
     case 'gameover':
       updateShowroom(dt);
       break;
+    case 'paused':
+      // Frozen race, but camera changes preview live.
+      rig.update(dt, player, car, true);
+      break;
+    case 'settings':
+      if (settingsReturn === 'menu') updateShowroom(dt);
+      else rig.update(dt, player, car, true);
+      break;
     default:
       break;
   }
-  if (game.state !== 'paused') {
+  if (game.state !== 'paused' && !(game.state === 'settings' && settingsReturn === 'paused')) {
     smoke.update(dt);
     sparks.update(dt);
   }

@@ -27,3 +27,53 @@ export function writeSave(data) {
     /* storage unavailable (private mode) */
   }
 }
+
+// ---------- Camera / display settings ----------
+const SETTINGS_KEY = 'highwayBlitz.settings.v1';
+const VIEW_IDS = ['chase', 'far', 'hood', 'bumper'];
+
+/** Slider ranges: [min, max, step]. */
+export const SETTING_RANGES = {
+  fov: [60, 90, 1],
+  dist: [4, 12, 0.5],
+  height: [1.5, 5, 0.1],
+  follow: [1, 12, 0.5],
+};
+
+export const settingsDefaults = () => ({
+  view: 'chase', fov: 62, dist: 7, height: 2.7, follow: 6, shake: true, speedFx: true,
+});
+
+const clampSetting = (key, v, d) => {
+  const [lo, hi] = SETTING_RANGES[key];
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d;
+};
+
+export function loadSettings() {
+  const d = settingsDefaults();
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return d;
+    const s = JSON.parse(raw);
+    return {
+      view: VIEW_IDS.includes(s.view) ? s.view : d.view,
+      fov: clampSetting('fov', s.fov, d.fov),
+      dist: clampSetting('dist', s.dist, d.dist),
+      height: clampSetting('height', s.height, d.height),
+      follow: clampSetting('follow', s.follow, d.follow),
+      shake: typeof s.shake === 'boolean' ? s.shake : d.shake,
+      speedFx: typeof s.speedFx === 'boolean' ? s.speedFx : d.speedFx,
+    };
+  } catch {
+    return d;
+  }
+}
+
+export function writeSettings(s) {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  } catch {
+    /* storage unavailable (private mode) */
+  }
+}
