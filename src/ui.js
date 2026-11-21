@@ -3,7 +3,7 @@ const $ = (id) => document.getElementById(id);
 import { SETTING_RANGES } from './storage.js';
 import { viewName, isChaseView } from './camera.js';
 
-const SCREENS = ['menu', 'pause', 'gameover', 'garage', 'settings'];
+const SCREENS = ['menu', 'pause', 'gameover', 'garage', 'settings', 'credits'];
 
 const SLIDERS = [
   ['sFov', 'vFov', 'fov', (v) => v + '°'],
@@ -128,8 +128,30 @@ export class UI {
     $('pauseCamName').textContent = viewName(view);
   }
 
+  loading(f) {
+    const pct = Math.round(f * 100);
+    if (this.cache.loadPct === pct) return;
+    this.cache.loadPct = pct;
+    $('loadFill').style.width = pct + '%';
+    $('loadPct').textContent = pct + '%';
+  }
+
+  loaded() {
+    $('loading').classList.add('done');
+    setTimeout(() => $('loading').classList.add('hidden'), 450);
+  }
+
+  loadFailed() {
+    $('loadMsg').textContent = 'Could not load the game files. Check your connection.';
+    $('btnRetryLoad').classList.remove('hidden');
+  }
+
   /** Reflect the current settings in the settings screen controls. */
-  settings(st) {
+  settings(st, gfxLoading = false) {
+    for (const b of $('gfxSeg').querySelectorAll('button')) {
+      b.classList.toggle('on', b.dataset.gfx === st.gfx);
+      b.textContent = b.dataset.gfx === 'high' && gfxLoading ? 'LOADING…' : b.dataset.gfx.toUpperCase();
+    }
     for (const [inputId, valId, key, fmt] of SLIDERS) {
       const el = $(inputId);
       const [min, max, step] = SETTING_RANGES[key];

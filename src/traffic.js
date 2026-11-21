@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { frame, LANES } from './track.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { buildTrafficTemplates, shadowMesh } from './cars.js';
 
 const COLORS = [0xe8e8e8, 0x26282c, 0x9aa3ad, 0xb3202a, 0x2952a3, 0x2f7d4a, 0xd9a520, 0x6a3b8f, 0xf07c1b, 0x5fb7d8];
@@ -12,7 +13,7 @@ export class Traffic {
     this.tex = tex;
     this.templates = buildTrafficTemplates();
     this.totalWeight = this.templates.reduce((a, t) => a + t.weight, 0);
-    this.bodyMats = COLORS.map((c) => new THREE.MeshLambertMaterial({ color: c }));
+    this.bodyColors = COLORS.map((c) => new THREE.Color(c));
     this.detMat = new THREE.MeshLambertMaterial({ vertexColors: true });
     this.litMat = new THREE.MeshBasicMaterial({ vertexColors: true });
     this.pool = this.templates.map(() => []);
@@ -25,9 +26,11 @@ export class Traffic {
     const t = this.templates[ti];
     const group = new THREE.Group();
     group.rotation.order = 'YXZ';
-    const body = new THREE.Mesh(t.body, this.bodyMats[0]);
+    // Body + details in one vertex-coloured mesh (one draw call); body vertices are recoloured per spawn.
+    const geo = mergeGeometries([t.body, t.det]);
+    const body = new THREE.Mesh(geo, this.detMat);
+    body.userData.bodyVerts = t.body.attributes.position.count;
     group.add(body);
-    group.add(new THREE.Mesh(t.det, this.detMat));
     group.add(new THREE.Mesh(t.lit, this.litMat));
     group.add(shadowMesh(this.tex, t.width * 1.35, t.length * 1.15));
     return { group, body, ti, t };
@@ -50,7 +53,10 @@ export class Traffic {
     let ti = 0;
     while (ti < this.templates.length - 1 && r > this.templates[ti].weight) r -= this.templates[ti++].weight;
     const car = this.pool[ti].pop() || this.makeCar(ti);
-    car.body.material = this.bodyMats[Math.floor(Math.random() * this.bodyMats.length)];
+    const paint = this.bodyColors[Math.floor(Math.random() * this.bodyColors.length)];
+    const colors = car.body.geometry.attributes.color;
+    for (let i = 0; i < car.body.userData.bodyVerts; i++) colors.setXYZ(i, paint.r, paint.g, paint.b);
+    colors.needsUpdate = true;
     car.s = s;
     car.lane = lane;
     car.x = LANES[lane];

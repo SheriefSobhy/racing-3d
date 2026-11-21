@@ -18,6 +18,39 @@
     <div id="nitroFx"></div>
     <div id="flash"></div>
 
+    <!-- Loading -->
+    <div id="loading">
+      <div class="title"><span class="t1">HIGHWAY</span><span class="t2">BLITZ</span></div>
+      <div class="load-bar"><div id="loadFill"></div></div>
+      <div class="load-row"><span id="loadMsg">LOADING</span> <b id="loadPct">0%</b></div>
+      <button class="btn small hidden" id="btnRetryLoad"><span>RETRY</span></button>
+    </div>
+
+    <!-- Credits -->
+    <div id="credits" class="screen dim hidden">
+      <div class="set-panel">
+        <div class="set-head">
+          <h3>CREDITS</h3>
+          <button class="btn small primary" id="btnCreditsBack"><span>BACK</span></button>
+        </div>
+        <div class="set-body credits-body">
+          <p class="cr-intro">Free 3D assets used in this game, with their authors and licenses:</p>
+          <div class="cr"><b>Car model</b> — "Car Concept" by Eric Chadwick (Darmstadt Graphics Group), based on "Concept Car 004" by Unity Fan (CC0). <i>CC BY 4.0</i> · modified: logos removed, simplified, recoloured. <a href="https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CarConcept" target="_blank" rel="noopener">source</a></div>
+          <div class="cr"><b>Sky HDRI</b> — "Kloofendal 48d Partly Cloudy (Pure Sky)" by Greg Zaal &amp; Jarod Guest, Poly Haven. <i>CC0</i></div>
+          <div class="cr"><b>Asphalt</b> — "Asphalt 02", Poly Haven. <i>CC0</i></div>
+          <div class="cr"><b>Grass</b> — "Leafy Grass", Poly Haven. <i>CC0</i></div>
+          <div class="cr"><b>Concrete</b> — "Brushed Concrete", Poly Haven. <i>CC0</i></div>
+          <div class="cr"><b>Tree bark</b> — "Pine Bark", Poly Haven. <i>CC0</i></div>
+          <div class="cr"><b>Road barrier</b> — "Concrete Road Barrier 02" by Amal Kumar, Poly Haven. <i>CC0</i></div>
+          <div class="cr"><b>Street lamp</b> — "Street Lamp 01" by Josh Dean, Poly Haven. <i>CC0</i></div>
+          <div class="cr"><b>Building facades</b> — Facade 005, 006, 018A, 020A, ambientCG.com. <i>CC0</i></div>
+          <div class="cr"><b>Tree leaves &amp; branches</b> — Leaf Set 019, Leaf Set 024, ambientCG.com. <i>CC0</i></div>
+          <div class="cr"><b>Font</b> — "Russo One" by Jovanny Lemonad, Google Fonts. <i>SIL Open Font License</i></div>
+          <p class="cr-intro">Full list with links: CREDITS.md in the game's source.</p>
+        </div>
+      </div>
+    </div>
+
     <!-- In-race HUD -->
     <div id="hud" class="hidden">
       <div class="hud-top">
@@ -71,6 +104,7 @@
             <button data-mode="tilt">TILT</button>
           </div>
           <button class="btn small ghost tall" id="btnSettings"><span>SETTINGS</span></button>
+          <button class="btn small ghost tall" id="btnCredits"><span>CREDITS</span></button>
           <button class="btn small ghost tall" id="btnFull"><span>FULLSCREEN</span></button>
         </div>
         <p class="hint">Steer with &#9664; &#9654; or tilt &middot; NITRO boosts &middot; hold DRIFT through curves to fill nitro &middot; pass close to traffic for bonus points</p>
@@ -100,6 +134,13 @@
           <button class="btn small primary" id="btnSetDone"><span>DONE</span></button>
         </div>
         <div class="set-body">
+          <div class="set-row wide">
+            <span class="lbl">GRAPHICS <em class="gfx-note">LOW = simpler textures, no reflections</em></span>
+            <div class="seg view-seg" id="gfxSeg">
+              <button data-gfx="low">LOW</button>
+              <button data-gfx="high">HIGH</button>
+            </div>
+          </div>
           <div class="set-row wide">
             <span class="lbl">CAMERA VIEW</span>
             <div class="seg view-seg" id="viewSeg">

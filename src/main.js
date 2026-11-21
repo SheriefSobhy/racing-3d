@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import './style.css';
 import { frame } from './track.js';
 import { World } from './world.js';
-import { CARS, buildPlayerCar, makeTextures } from './cars.js';
+import { CARS, buildPlayerCar, makeTextures, setCarQuality } from './cars.js';
+import { loadAssets, loadHighAssets } from './assets.js';
 import { Traffic } from './traffic.js';
 import { Pickups } from './pickups.js';
 import { Player, START_S } from './player.js';
@@ -30,7 +31,7 @@ const settings = loadSettings();
 const rig = new CameraRig(camera, settings);
 
 const tex = makeTextures();
-const world = new World(scene, tex);
+let world = null; // created once assets are loaded
 const traffic = new Traffic(scene, tex);
 const pickups = new Pickups(scene);
 const smoke = new Particles(scene, tex.smoke, 26, false);
@@ -43,8 +44,34 @@ if (!CARS.some((c) => c.id === save.selected)) save.selected = 'vortex';
 
 const specOf = (id) => CARS.find((c) => c.id === id) || CARS[0];
 const models = {};
-for (const spec of CARS) models[spec.id] = buildPlayerCar(spec, tex);
 let car = null;
+
+// ---------- Graphics quality ----------
+let highAssets = null;
+let gfxBusy = false;
+async function applyGraphics(level, onProgress) {
+  const high = level === 'high';
+  if (high && !highAssets) highAssets = await loadHighAssets(renderer, onProgress);
+  scene.environment = high ? highAssets.envMap : null;
+  world.setQuality(high, highAssets);
+  for (const m of Object.values(models)) setCarQuality(m, high);
+}
+async function setGraphics(level, chosen = true) {
+  if (gfxBusy || !world) return;
+  gfxBusy = true;
+  settings.gfx = level;
+  if (chosen) settings.gfxChosen = true;
+  writeSettings(settings);
+  ui.settings(settings, level === 'high' && !highAssets);
+  try {
+    await applyGraphics(level);
+  } catch {
+    settings.gfx = 'low';
+    await applyGraphics('low');
+  }
+  gfxBusy = false;
+  ui.settings(settings);
+}
 function showCar(id) {
   if (car) scene.remove(car.root);
   car = models[id];
@@ -54,7 +81,7 @@ function showCar(id) {
 
 // ---------- Game state ----------
 const game = {
-  state: 'menu', // menu | garage | playing | crashing | paused | gameover
+  state: 'loading', // loading | menu | garage | playing | crashing | paused | gameover | settings | credits
   score: 0,
   coins: 0,
   crashes: 0,
@@ -79,7 +106,7 @@ function flushSave() {
 function setState(s) {
   game.state = s;
   const map = {
-    menu: 'menu', garage: 'garage', playing: 'hud', crashing: 'hud', paused: 'pause', gameover: 'gameover', settings: 'settings',
+    menu: 'menu', garage: 'garage', playing: 'hud', crashing: 'hud', paused: 'pause', gameover: 'gameover', settings: 'settings', credits: 'credits',
   };
   ui.show(map[s]);
   if (s === 'menu') ui.menu(save);
@@ -250,7 +277,7 @@ function syncCar(dt, moving) {
   placeOnRoad(car.root, player.s, player.x, player.yaw);
   car.body.rotation.z = player.roll;
   if (moving) {
-    const spin = (player.v * dt) / 0.34;
+    const spin = (player.v * dt) / car.wheelR;
     for (const w of car.spins) w.rotation.x -= spin;
   }
   for (const w of car.steers) w.rotation.y = -player.steer * 0.4;
@@ -260,7 +287,9 @@ function syncCar(dt, moving) {
     car.flames.scale.set(1, 1, s);
   }
   car.glowMat.opacity = player.invuln > 0 ? 1 : 0.85;
-  car.body.visible = player.invuln <= 0 || Math.floor(player.invuln * 12) % 2 === 0;
+  const vis = player.invuln <= 0 || Math.floor(player.invuln * 12) % 2 === 0;
+  car.body.visible = vis;
+  for (const w of car.spins) w.parent.visible = vis;
 
   if (!moving) return;
   car.root.updateMatrixWorld();
@@ -374,7 +403,7 @@ function updateShowroom(dt) {
   player.scraping = false;
   player.invuln = 0;
   syncCar(dt, false);
-  if (game.state === 'garage') orbitCamera(dt, 5.6, 1.5, 0.35);
+  if (game.state === 'garage') orbitCamera(dt, 7.2, 1.7, 0.35);
   else if (game.state === 'gameover') orbitCamera(dt, 8.5, 2.6, 0.15);
   else orbitCamera(dt, 7.5, 2.2, 0.22);
 }
@@ -432,11 +461,25 @@ tap('btnPauseSettings', openSettings);
 tap('btnSettings', openSettings);
 tap('btnSetDone', closeSettings);
 tap('btnSetReset', () => {
+  const prevGfx = settings.gfx;
   Object.assign(settings, settingsDefaults());
   rig.resize(camera.aspect);
   saveSettings();
   ui.settings(settings);
+  if (settings.gfx !== prevGfx) setGraphics(settings.gfx, false);
 });
+for (const b of $('gfxSeg').querySelectorAll('button')) {
+  b.addEventListener('click', () => {
+    if (b.dataset.gfx !== settings.gfx || !settings.gfxChosen) setGraphics(b.dataset.gfx);
+  });
+}
+tap('btnCredits', () => {
+  if (game.state === 'menu') setState('credits');
+});
+tap('btnCreditsBack', () => {
+  if (game.state === 'credits') setState('menu');
+});
+tap('btnRetryLoad', () => location.reload());
 for (const b of $('viewSeg').querySelectorAll('button')) b.addEventListener('click', () => setView(b.dataset.view));
 for (const el of $('settings').querySelectorAll('input[type=range]')) {
   el.addEventListener('input', () => {
@@ -533,6 +576,7 @@ function loop(now) {
     case 'menu':
     case 'garage':
     case 'gameover':
+    case 'credits':
       updateShowroom(dt);
       break;
     case 'paused':
@@ -558,9 +602,14 @@ function loop(now) {
     perfFrames++;
     perfTime += rawDt;
     if (perfTime > 2.5) {
-      if (perfFrames / perfTime < 48 && pixelRatio > 1) {
+      const fps = perfFrames / perfTime;
+      if (fps < 48 && pixelRatio > 1) {
         pixelRatio = Math.max(1, pixelRatio - 0.25);
         renderer.setPixelRatio(pixelRatio);
+      } else if (fps < 42 && settings.gfx === 'high' && !settings.gfxChosen) {
+        // Still slow at the lowest resolution: fall back to Low graphics (only if the player never picked).
+        setGraphics('low', false);
+        ui.popup('GRAPHICS: LOW', 'cam');
       }
       perfFrames = 0;
       perfTime = 0;
@@ -579,8 +628,32 @@ function loop(now) {
   }
 }
 
-resize();
-toMenu();
-if (DEBUG) window.__hb = { game, player, traffic, save };
-if (DEBUG && /autostart/.test(location.search)) startRace();
-requestAnimationFrame(loop);
+// ---------- Boot: load assets behind the loading screen ----------
+async function boot() {
+  resize();
+  const high = settings.gfx === 'high';
+  try {
+    const assets = await loadAssets(renderer, (f) => ui.loading(f * (high ? 0.8 : 0.95)));
+    world = new World(scene, tex, assets);
+    for (const spec of CARS) models[spec.id] = buildPlayerCar(spec, tex, assets.car);
+    try {
+      await applyGraphics(settings.gfx, (f) => ui.loading(0.8 + f * 0.15));
+    } catch {
+      settings.gfx = 'low';
+      await applyGraphics('low');
+    }
+  } catch (err) {
+    console.error(err);
+    ui.loadFailed();
+    return;
+  }
+  toMenu();
+  renderer.compile(scene, camera); // avoid shader hitches on the first frames
+  ui.loading(1);
+  ui.loaded();
+  if (DEBUG) window.__hb = { game, player, traffic, save, renderer, settings, setGraphics, world, scene, models, camera };
+  if (DEBUG && /autostart/.test(location.search)) startRace();
+  last = performance.now();
+  requestAnimationFrame(loop);
+}
+boot();

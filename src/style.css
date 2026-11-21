@@ -488,3 +488,33 @@ body.tilt-mode .steer { visibility: hidden; }
 .set-body { flex: 1 1 auto; min-height: 0; }
 .set-body button { touch-action: manipulation; }
 .popup.cam { color: #fff; font-size: 18px; }
+
+/* ---------- Loading ---------- */
+#loading {
+  position: fixed; inset: 0; z-index: 40;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  background: radial-gradient(ellipse at center, #16213d 0%, #0b1020 70%);
+  transition: opacity 0.4s;
+}
+#loading.done { opacity: 0; pointer-events: none; }
+.load-bar {
+  width: min(360px, 80vw); height: 14px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+  transform: skewX(-20deg);
+}
+#loadFill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent2), var(--accent), #ffb15c); transition: width 0.2s; }
+.load-row { font-size: 14px; letter-spacing: 2px; opacity: 0.85; }
+.load-row b { color: var(--gold); margin-left: 6px; }
+
+/* ---------- Credits ---------- */
+#credits { z-index: 5; }
+.credits-body { display: block; font-family: system-ui, sans-serif; font-size: 13px; line-height: 1.45; }
+.credits-body .cr { padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.credits-body .cr b { font-family: 'Russo One', system-ui, sans-serif; font-weight: normal; color: var(--gold); }
+.credits-body .cr i { font-style: normal; color: #9fe0ff; white-space: nowrap; }
+.credits-body a { color: #9fc7ff; }
+.cr-intro { margin: 4px 0 8px; opacity: 0.75; font-size: 12px; }
+.gfx-note { font-family: system-ui, sans-serif; font-size: 10px; color: rgba(255, 255, 255, 0.55) !important; }

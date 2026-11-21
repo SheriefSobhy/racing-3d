@@ -13,7 +13,7 @@ export const isChaseView = (id) => id === 'chase' || id === 'far';
 
 // Car-local mount points (car front faces -Z).
 const MOUNTS = {
-  hood: { pos: [0, 1.1, -0.75], look: [0, 1.0, -30] },
+  hood: { pos: [0, 1.02, -1.3], look: [0, 0.95, -30] },
   bumper: { pos: [0, 0.52, -2.5], look: [0, 0.5, -30] },
 };
 

@@ -21,7 +21,7 @@ export const CARS = [
   },
   {
     id: 'umbra', name: 'UMBRA Z9', price: 1500,
-    color: 0x7a2cf0, accent: 0x00e5ff, rim: 0xe6e6e6,
+    color: 0x5a22c8, accent: 0x18181e, rim: 0xe6e6e6,
     maxSpeed: 84, accel: 18, handling: 1.25, nitro: 1.3, wing: 'wing',
   },
 ];
@@ -59,103 +59,225 @@ export function shadowMesh(tex, w, l) {
   return m;
 }
 
-function extrudeProfile(pts, depth, bevel) {
-  const sh = new THREE.Shape();
-  sh.moveTo(pts[0][0], pts[0][1]);
-  for (let i = 1; i < pts.length; i++) sh.lineTo(pts[i][0], pts[i][1]);
-  sh.closePath();
-  const g = new THREE.ExtrudeGeometry(sh, {
-    depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 1, curveSegments: 1,
+// ---------- Player car (glTF model) ----------
+const CAR_LENGTH = 4.5;
+const _box = new THREE.Box3();
+let carTemplate = null;
+
+/** Normalise the glTF once: front faces -Z, wheels on y = 0, centred, CAR_LENGTH long. */
+function prepareCarTemplate(gltf) {
+  const model = gltf.scene;
+  const holder = new THREE.Group();
+  holder.add(model);
+  holder.updateMatrixWorld(true);
+  const centre = (name) => _box.setFromObject(model.getObjectByName(name)).getCenter(new THREE.Vector3());
+  const dir = centre('BodyHeadlights').sub(centre('BodyTaillights'));
+  holder.rotation.y = Math.atan2(dir.x, -dir.z);
+  holder.updateMatrixWorld(true);
+  _box.setFromObject(holder);
+  holder.scale.setScalar(CAR_LENGTH / (_box.max.z - _box.min.z));
+  holder.updateMatrixWorld(true);
+  _box.setFromObject(holder);
+  const c = _box.getCenter(new THREE.Vector3());
+  holder.position.set(-c.x, -_box.min.y, -c.z);
+  holder.updateMatrixWorld(true);
+
+  // Interior / underbody parts are barely visible through tinted glass: one shared dark material.
+  // Tyre side + tread share one rubber material. Fewer materials = fewer draw calls.
+  const interior = new THREE.MeshStandardMaterial({ name: 'Interior', color: 0x161616, roughness: 0.85, metalness: 0.1 });
+  let rubber = null;
+  let rimDark = null;
+  holder.traverse((o) => o.isMesh && o.material.name === 'Rim1' && (rimDark = o.material));
+  holder.traverse((o) => {
+    if (!o.isMesh) return;
+    const n = o.material.name;
+    if (/^Interior|Floormat|Dashboard|Panel Sides|Mechanical|Hardware/.test(n) || n === '') o.material = interior;
+    else if ((n === 'Disc' || n === 'Brake') && rimDark) o.material = rimDark; // brake parts behind the spokes
+    else if (/^Tire/.test(n)) {
+      rubber = rubber || Object.assign(o.material.clone(), { name: 'Tire' });
+      rubber.map = null;
+      rubber.color.setHex(0x111111);
+      rubber.roughness = 0.9;
+      o.material = rubber;
+    }
   });
-  g.translate(0, 0, -depth / 2);
-  g.rotateY(Math.PI / 2); // profile x (front) -> -Z, extrusion -> X (width)
+
+  // Merge parts by material to cut draw calls: one set for the body, one per wheel (wheels spin/steer).
+  const template = new THREE.Group();
+  const wheelNodes = WHEELS.map((n) => model.getObjectByName(n)).filter(Boolean);
+  const inWheel = (o) => {
+    for (let p = o; p; p = p.parent) if (wheelNodes.includes(p)) return true;
+    return false;
+  };
+  const bodyMeshes = [];
+  holder.traverse((o) => o.isMesh && !inWheel(o) && bodyMeshes.push(o));
+  for (const m of mergeByMaterial(bodyMeshes, new THREE.Matrix4())) template.add(m);
+  for (const node of wheelNodes) {
+    const g = new THREE.Group();
+    g.name = node.name;
+    new THREE.Box3().setFromObject(node).getCenter(g.position);
+    g.updateMatrixWorld();
+    const meshes = [];
+    node.traverse((o) => o.isMesh && meshes.push(o));
+    for (const m of mergeByMaterial(meshes, g.matrixWorld.clone().invert())) g.add(m);
+    template.add(g);
+  }
+  template.traverse((o) => {
+    if (o.isMesh) o.frustumCulled = false; // the car is always on screen
+  });
+  template.updateMatrixWorld(true);
+  const lights = new THREE.Box3();
+  template.traverse((o) => o.isMesh && o.material.name === 'Brakelight' && lights.expandByObject(o));
+  template.userData.taillights = lights;
+  template.userData.bounds = new THREE.Box3().setFromObject(template);
+  return template;
+}
+
+const WHEELS = ['WheelFrontL', 'WheelFrontR', 'WheelRearL', 'WheelRearR'];
+
+/** Plain float copy of a (possibly meshopt-quantised) geometry, transformed by m. */
+function floatGeometry(src, m) {
+  const g = new THREE.BufferGeometry();
+  for (const [k, a] of Object.entries(src.attributes)) {
+    const out = new Float32Array(a.count * a.itemSize);
+    const get = [a.getX, a.getY, a.getZ, a.getW];
+    for (let i = 0; i < a.count; i++) for (let c = 0; c < a.itemSize; c++) out[i * a.itemSize + c] = get[c].call(a, i);
+    g.setAttribute(k, new THREE.BufferAttribute(out, a.itemSize));
+  }
+  const n = g.attributes.position.count;
+  g.setIndex(src.index ? Array.from(src.index.array) : [...Array(n).keys()]);
+  g.applyMatrix4(m);
   return g;
 }
 
+function mergeByMaterial(meshes, toLocal) {
+  const groups = new Map();
+  for (const mesh of meshes) {
+    const key = mesh.material.uuid + '|' + Object.keys(mesh.geometry.attributes).sort().join(',');
+    if (!groups.has(key)) groups.set(key, { material: mesh.material, geos: [] });
+    const m = new THREE.Matrix4().multiplyMatrices(toLocal, mesh.matrixWorld);
+    groups.get(key).geos.push(floatGeometry(mesh.geometry, m));
+  }
+  const out = [];
+  for (const { material, geos } of groups.values()) {
+    const geo = geos.length > 1 ? mergeGeometries(geos) : geos[0];
+    out.push(new THREE.Mesh(geo, material));
+  }
+  return out;
+}
+
+const lowCache = new Map();
+/** Cheap material for Low graphics: no PBR, no environment reflections. */
+function lowMaterial(m) {
+  let L = lowCache.get(m);
+  if (L) return L;
+  const shiny = /Paint|Glass|Rim2|Mirror/.test(m.name);
+  L = shiny
+    ? new THREE.MeshPhongMaterial({ shininess: /Glass/.test(m.name) ? 120 : 70, specular: 0x4a4a4a })
+    : new THREE.MeshLambertMaterial();
+  L.name = m.name;
+  L.color.copy(m.color);
+  if (m.metalness > 0.5 && !/Paint/.test(m.name)) L.color.multiplyScalar(0.75);
+  L.map = m.map;
+  L.emissive.copy(m.emissive);
+  L.emissiveMap = m.emissiveMap;
+  L.emissiveIntensity = m.emissiveIntensity;
+  L.transparent = m.transparent;
+  L.opacity = m.opacity;
+  L.side = m.side;
+  L.depthWrite = m.depthWrite;
+  lowCache.set(m, L);
+  return L;
+}
+
+export function setCarQuality(car, high) {
+  for (const mesh of car.meshes) mesh.material = high ? mesh.userData.hi : mesh.userData.lo;
+}
+
 /**
- * Low-poly sports car. Front faces -Z. Returns handles used for animation.
+ * Player car built from the shared glTF model. Front faces -Z.
+ * Returns handles used for animation (same shape as before).
  */
-export function buildPlayerCar(spec, tex) {
+export function buildPlayerCar(spec, tex, gltf) {
+  if (!carTemplate) carTemplate = prepareCarTemplate(gltf);
   const root = new THREE.Group();
   root.rotation.order = 'YXZ';
   const body = new THREE.Group();
   root.add(body);
+  const model = carTemplate.clone(true);
+  body.add(model);
 
-  const mats = {
-    paint: new THREE.MeshPhongMaterial({ color: spec.color, shininess: 90, specular: 0x777777, flatShading: true }),
-    accent: new THREE.MeshPhongMaterial({ color: spec.accent, shininess: 60, specular: 0x444444, flatShading: true }),
-    dark: new THREE.MeshLambertMaterial({ color: 0x15171c }),
-    glass: new THREE.MeshPhongMaterial({ color: 0x0c1522, shininess: 140, specular: 0xaabbcc, flatShading: true }),
-    tail: new THREE.MeshBasicMaterial({ color: 0xff2236 }),
-    head: new THREE.MeshBasicMaterial({ color: 0xfff6dc }),
+  // Per-car colours on cloned materials; other materials stay shared.
+  const custom = new Map();
+  const recolor = (m) => {
+    if (custom.has(m)) return custom.get(m);
+    let c = m;
+    if (/^Paint 1/.test(m.name)) c = m.clone(), c.color.setHex(spec.color);
+    else if (/^Paint 2/.test(m.name)) c = m.clone(), c.color.setHex(spec.accent);
+    else if (m.name === 'Rim2') c = m.clone(), c.color.setHex(spec.rim);
+    else if (m.name === 'Brakelight') c = m.clone(), c.emissive.setHex(0xff1a1a), (c.emissiveIntensity = 2.2), c.color.setHex(0x550000);
+    else if (m.name === 'Headlight') c = m.clone(), c.emissive.setHex(0xfff2d6), (c.emissiveIntensity = 1.6);
+    else if (m.name === 'Signallight') c = m.clone(), c.emissive.setHex(0xff8a00), (c.emissiveIntensity = 0.5);
+    if (c !== m && 'envMapIntensity' in c) c.envMapIntensity = /Paint/.test(c.name) ? 1.15 : 1;
+    custom.set(m, c);
+    return c;
   };
-  const parts = new Map();
-  const add = (mat, geo, x = 0, y = 0, z = 0) => {
-    let g = geo.index ? geo.toNonIndexed() : geo;
-    g.deleteAttribute('uv');
-    g.translate(x, y, z);
-    if (!parts.has(mat)) parts.set(mat, []);
-    parts.get(mat).push(g);
-  };
-  const box = (sx, sy, sz) => new THREE.BoxGeometry(sx, sy, sz);
+  const meshes = [];
+  model.traverse((o) => {
+    if (!o.isMesh) return;
+    o.material = recolor(o.material);
+    o.userData.hi = o.material;
+    o.userData.lo = lowMaterial(o.material);
+    meshes.push(o);
+  });
 
-  // Main body and cabin from side profiles (x = forward, y = up)
-  add(mats.paint, extrudeProfile(
-    [[-2.25, 0.3], [2.1, 0.3], [2.28, 0.42], [2.2, 0.58], [1.3, 0.72], [0.6, 0.8], [-1.6, 0.86], [-2.2, 0.86], [-2.3, 0.62], [-2.28, 0.36]],
-    1.82, 0.06,
-  ));
-  add(mats.glass, extrudeProfile([[0.75, 0.76], [-0.05, 1.13], [-0.95, 1.15], [-1.75, 0.82]], 1.46, 0.04));
-  add(mats.paint, box(1.36, 0.05, 0.86), 0, 1.19, 0.5);
+  root.updateMatrixWorld(true);
+  const whole = carTemplate.userData.bounds;
 
-  if (spec.wing === 'wing') {
-    add(mats.accent, box(0.08, 0.26, 0.14), -0.55, 1.0, 1.95);
-    add(mats.accent, box(0.08, 0.26, 0.14), 0.55, 1.0, 1.95);
-    add(mats.accent, box(1.86, 0.05, 0.42), 0, 1.14, 2.0);
-    add(mats.accent, box(0.04, 0.22, 0.46), -0.93, 1.1, 2.0);
-    add(mats.accent, box(0.04, 0.22, 0.46), 0.93, 1.1, 2.0);
-  } else {
-    add(mats.accent, box(1.7, 0.05, 0.3), 0, 0.94, 2.1);
-  }
-  add(mats.accent, box(0.08, 0.1, 2.6), -0.99, 0.33, 0);
-  add(mats.accent, box(0.08, 0.1, 2.6), 0.99, 0.33, 0);
-  add(mats.accent, box(0.12, 0.08, 0.2), -1.0, 0.92, -0.55); // mirrors
-  add(mats.accent, box(0.12, 0.08, 0.2), 1.0, 0.92, -0.55);
-  add(mats.dark, box(1.9, 0.05, 0.36), 0, 0.26, -2.2);
-  add(mats.dark, box(1.7, 0.16, 0.25), 0, 0.34, 2.27);
-  add(mats.dark, box(1.0, 0.1, 0.06), 0, 0.42, -2.33); // grille
-  for (const x of [-0.42, 0.42]) {
-    add(mats.dark, new THREE.CylinderGeometry(0.065, 0.065, 0.2, 8).rotateX(Math.PI / 2), x, 0.36, 2.34);
-  }
-  for (const x of [-0.62, 0.62]) {
-    add(mats.head, box(0.46, 0.08, 0.1), x, 0.56, -2.23);
-    add(mats.tail, box(0.5, 0.1, 0.05), x, 0.72, 2.33);
-  }
-  add(mats.tail, box(0.7, 0.04, 0.04), 0, 0.72, 2.33);
-
-  for (const [mat, geos] of parts) {
-    body.add(new THREE.Mesh(mergeGeometries(geos), mat));
+  // Wheels: steer (yaw) group at the hub -> spin group -> merged wheel meshes.
+  const steers = [];
+  const spins = [];
+  let wheelR = 0.34;
+  for (const name of WHEELS) {
+    const node = model.getObjectByName(name);
+    if (!node) continue;
+    const b = new THREE.Box3().setFromObject(node);
+    wheelR = (b.max.y - b.min.y) / 2;
+    const steer = new THREE.Group();
+    steer.position.copy(node.position);
+    const spin = new THREE.Group();
+    steer.add(spin);
+    root.add(steer);
+    node.position.set(0, 0, 0);
+    spin.add(node);
+    spins.push(spin);
+    if (name.includes('Front')) steers.push(steer);
   }
 
-  // Tail-light glow
+  // Tail-light glow sprites on the real tail-light positions.
   const glowMat = new THREE.SpriteMaterial({
     map: tex.glow, color: 0xff2a3a, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   });
+  const tl = carTemplate.userData.taillights;
+  const tlW = (tl.max.x - tl.min.x) / 2;
+  const tlY = (tl.min.y + tl.max.y) / 2;
   const glows = [];
-  for (const x of [-0.62, 0.62]) {
+  for (const s of [-1, 1]) {
     const sp = new THREE.Sprite(glowMat);
-    sp.position.set(x, 0.72, 2.45);
-    sp.scale.set(1.0, 0.5, 1);
+    sp.position.set(s * tlW * 0.78, tlY, tl.max.z + 0.06);
+    sp.scale.set(0.9, 0.45, 1);
     body.add(sp);
     glows.push(sp);
   }
 
-  // Nitro flames (tip points backwards, +Z)
+  // Nitro flames (tip points backwards, +Z) from the rear diffuser.
+  const rearZ = whole.max.z - 0.05;
   const flames = new THREE.Group();
   const flameGeo = (r, l) => new THREE.ConeGeometry(r, l, 8, 1, true).translate(0, l / 2, 0).rotateX(Math.PI / 2);
   const outer = [], inner = [];
   for (const x of [-0.42, 0.42]) {
-    outer.push(flameGeo(0.14, 1.1).translate(x, 0.36, 2.42));
-    inner.push(flameGeo(0.07, 0.6).translate(x, 0.36, 2.42));
+    outer.push(flameGeo(0.14, 1.1).translate(x, 0.32, rearZ));
+    inner.push(flameGeo(0.07, 0.6).translate(x, 0.32, rearZ));
   }
   const flameMat = (c, o) => new THREE.MeshBasicMaterial({
     color: c, transparent: true, opacity: o, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
@@ -165,31 +287,10 @@ export function buildPlayerCar(spec, tex) {
   flames.visible = false;
   body.add(flames);
 
-  // Wheels: one vertex-coloured mesh each, spokes make the spin visible.
-  const wb = new GeoBuilder();
-  const tire = col(0x17181b), rim = col(spec.rim), spoke = col(0x3c4047), hub = col(0xd02030);
-  put(wb, T.wheel, 0, 0, 0, 0.3, 0.34, 0.34, tire);
-  put(wb, T.wheel, 0, 0, 0, 0.32, 0.23, 0.23, rim);
-  put(wb, T.box, 0, 0, 0, 0.335, 0.42, 0.07, spoke);
-  put(wb, T.box, 0, 0, 0, 0.335, 0.07, 0.42, spoke);
-  put(wb, T.wheel, 0, 0, 0, 0.345, 0.06, 0.06, hub);
-  const wheelGeo = wb.build();
-  const wheelMat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 50, flatShading: true });
-  const steers = [];
-  const spins = [];
-  for (const [x, z, front] of [[-0.9, -1.4, true], [0.9, -1.4, true], [-0.9, 1.35, false], [0.9, 1.35, false]]) {
-    const steer = new THREE.Group();
-    steer.position.set(x, 0.34, z);
-    const spin = new THREE.Mesh(wheelGeo, wheelMat);
-    steer.add(spin);
-    root.add(steer);
-    spins.push(spin);
-    if (front) steers.push(steer);
-  }
+  root.add(shadowMesh(tex, 2.5, 5.3));
 
-  root.add(shadowMesh(tex, 2.6, 5.4));
-
-  return { root, body, steers, spins, flames, glows, glowMat, spec };
+  const height = whole.max.y;
+  return { root, body, steers, spins, flames, glows, glowMat, spec, meshes, wheelR, height };
 }
 
 /** Simple traffic vehicles: body (tinted per car), details and lights. */
