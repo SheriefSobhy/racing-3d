@@ -10,6 +10,8 @@ const SLIDERS = [
   ['sFollow', 'vFollow', 'follow', (v) => v.toFixed(1)],
   ['sDist', 'vDist', 'dist', (v) => v.toFixed(1) + ' m'],
   ['sHeight', 'vHeight', 'height', (v) => v.toFixed(1) + ' m'],
+  ['sSfx', 'vSfx', 'sfx', (v) => v + '%'],
+  ['sMusic', 'vMusic', 'music', (v) => v + '%'],
 ];
 
 export class UI {
@@ -124,6 +126,12 @@ export class UI {
     }
   }
 
+  mute(muted) {
+    const b = $('btnMute');
+    b.classList.toggle('muted', muted);
+    b.setAttribute('aria-label', muted ? 'Sound off, tap to unmute' : 'Sound on, tap to mute');
+  }
+
   camView(view) {
     $('pauseCamName').textContent = viewName(view);
   }
@@ -169,6 +177,8 @@ export class UI {
     }
     $('tShake').setAttribute('aria-pressed', String(st.shake));
     $('tSpeedFx').setAttribute('aria-pressed', String(st.speedFx));
+    $('tMute').setAttribute('aria-pressed', String(st.muted));
+    this.mute(st.muted);
     this.camView(st.view);
   }
 }

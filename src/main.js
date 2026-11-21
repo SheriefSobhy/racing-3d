@@ -12,6 +12,7 @@ import { Particles } from './effects.js';
 import { UI } from './ui.js';
 import { loadSave, writeSave, loadSettings, writeSettings, settingsDefaults } from './storage.js';
 import { CameraRig, VIEWS, viewName } from './camera.js';
+import { Sound } from './audio.js';
 
 const DEBUG = /(^|[?&])debug(=|&|$)/.test(location.search.slice(1));
 const MAX_LIVES = 3;
@@ -29,6 +30,7 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.3, 1200);
 const settings = loadSettings();
 const rig = new CameraRig(camera, settings);
+const sound = new Sound(settings);
 
 const tex = makeTextures();
 let world = null; // created once assets are loaded
@@ -105,6 +107,7 @@ function flushSave() {
 
 function setState(s) {
   game.state = s;
+  sound.setPaused(s === 'paused' || (s === 'settings' && settingsReturn === 'paused'));
   const map = {
     menu: 'menu', garage: 'garage', playing: 'hud', crashing: 'hud', paused: 'pause', gameover: 'gameover', settings: 'settings', credits: 'credits',
   };
@@ -145,6 +148,7 @@ async function startRace() {
   ui.resetHud();
   setState('playing');
   ui.popup('GO!', 'nitro');
+  sound.go();
 }
 
 function pause() {
@@ -204,6 +208,7 @@ const v3 = new THREE.Vector3();
 const handlers = {
   canCrash: () => game.state === 'playing',
   onCrash(other, side) {
+    sound.crash();
     game.crashes++;
     player.v *= 0.3;
     player.xv = -side * 5;
@@ -234,10 +239,12 @@ const handlers = {
     const pts = 150 * game.combo;
     game.score += pts;
     game.nearMisses++;
+    sound.nearMiss(game.combo);
     player.nitro = Math.min(1, player.nitro + 0.05);
     ui.popup(game.combo > 1 ? `NEAR MISS x${game.combo}  +${pts}` : `NEAR MISS  +${pts}`, 'near');
   },
   onCoin(c) {
+    sound.coin();
     game.coins++;
     game.score += 10;
     save.coins++;
@@ -251,6 +258,7 @@ const handlers = {
     }
   },
   onNitro(c) {
+    sound.nitroPickup();
     player.nitro = Math.min(1, player.nitro + 0.4);
     game.score += 50;
     ui.popup('NITRO  +40%', 'nitro');
@@ -372,6 +380,7 @@ function updateRace(dt) {
       if (pts >= 25) {
         game.score += pts;
         ui.popup(`DRIFT  +${pts}`, 'drift');
+        sound.driftScore();
       }
       game.driftPts = 0;
     }
@@ -451,6 +460,26 @@ tap('carNext', () => {
 tap('carAction', garageAction);
 
 // Camera button: react on pointerdown so it works while other fingers hold steer/nitro.
+// Audio may only start after a user gesture; unlock on the first tap / key.
+for (const ev of ['pointerdown', 'keydown', 'touchend']) addEventListener(ev, () => sound.unlock(), { capture: true });
+// UI click sound for menu buttons (not the driving controls).
+document.addEventListener('click', (e) => {
+  const b = e.target.closest && e.target.closest('button');
+  if (b && !b.closest('#controls')) sound.click();
+});
+function toggleMute() {
+  settings.muted = !settings.muted;
+  saveSettings();
+  sound.apply();
+  ui.mute(settings.muted);
+  if (game.state === 'settings') ui.settings(settings);
+}
+$('btnMute').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  sound.unlock();
+  toggleMute();
+});
+$('btnMute').addEventListener('contextmenu', (e) => e.preventDefault());
 $('btnCam').addEventListener('pointerdown', (e) => {
   e.preventDefault();
   if (game.state === 'playing') cycleView();
@@ -466,6 +495,7 @@ tap('btnSetReset', () => {
   rig.resize(camera.aspect);
   saveSettings();
   ui.settings(settings);
+  sound.apply();
   if (settings.gfx !== prevGfx) setGraphics(settings.gfx, false);
 });
 for (const b of $('gfxSeg').querySelectorAll('button')) {
@@ -484,6 +514,7 @@ for (const b of $('viewSeg').querySelectorAll('button')) b.addEventListener('cli
 for (const el of $('settings').querySelectorAll('input[type=range]')) {
   el.addEventListener('input', () => {
     settings[el.dataset.key] = Number(el.value);
+    sound.apply();
     if (el.dataset.key === 'fov') rig.resize(camera.aspect);
     ui.settings(settings);
   });
@@ -492,11 +523,13 @@ for (const el of $('settings').querySelectorAll('input[type=range]')) {
 for (const b of $('settings').querySelectorAll('.toggle')) {
   b.addEventListener('click', () => {
     settings[b.dataset.key] = !settings[b.dataset.key];
+    sound.apply();
     saveSettings();
     ui.settings(settings);
   });
 }
 ui.camView(settings.view);
+ui.mute(settings.muted);
 
 for (const b of $('steerSeg').querySelectorAll('button')) {
   b.addEventListener('click', async () => {
@@ -525,7 +558,9 @@ fsBtn.addEventListener('click', () => {
 });
 
 input.onKey = (code) => {
-  if (code === 'KeyC' && (game.state === 'playing' || game.state === 'paused')) {
+  if (code === 'KeyM') {
+    toggleMute();
+  } else if (code === 'KeyC' && (game.state === 'playing' || game.state === 'paused')) {
     cycleView();
   } else if (game.state === 'settings') {
     if (code === 'Escape') closeSettings();
@@ -594,6 +629,7 @@ function loop(now) {
     smoke.update(dt);
     sparks.update(dt);
   }
+  sound.update(game.state === 'playing' || game.state === 'crashing' ? player : null);
   world.follow(camera);
   renderer.render(scene, camera);
 
@@ -651,7 +687,7 @@ async function boot() {
   renderer.compile(scene, camera); // avoid shader hitches on the first frames
   ui.loading(1);
   ui.loaded();
-  if (DEBUG) window.__hb = { game, player, traffic, save, renderer, settings, setGraphics, world, scene, models, camera };
+  if (DEBUG) window.__hb = { game, player, traffic, save, renderer, settings, setGraphics, world, scene, models, camera, sound };
   if (DEBUG && /autostart/.test(location.search)) startRace();
   last = performance.now();
   requestAnimationFrame(loop);

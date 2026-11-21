@@ -15,6 +15,7 @@ CC0 assets need no attribution; we list them anyway. The one CC BY asset is cred
 | Street Lamp 01 | Street lamps | Josh Dean | CC0 | [Poly Haven](https://polyhaven.com/a/street_lamp_01) |
 | Facade 005, Facade 006, Facade 018A, Facade 020A | Building walls | ambientCG (Lennart Demes) | CC0 | [ambientCG](https://ambientcg.com/list?q=facade) |
 | Leaf Set 019, Leaf Set 024 | Pine and leafy tree billboards | ambientCG (Lennart Demes) | CC0 | [ambientCG](https://ambientcg.com/list?q=leafset) |
+| Pure Raceway | Music (re-encoded to 96 kbps MP3) | MintoDog | CC0 | [OpenGameArt](https://opengameart.org/content/pure-raceway) |
 | Russo One (font) | UI text | Jovanny Lemonad | [SIL Open Font License 1.1](https://openfontlicense.org/) | [Google Fonts](https://fonts.google.com/specimen/Russo+One) |
 
 ## Changes made to the assets
@@ -24,5 +25,7 @@ CC0 assets need no attribution; we list them anyway. The one CC BY asset is cred
 - **Textures:** resized and converted to WebP. Lane markings and curbs are painted onto the asphalt texture.
 - **Trees:** billboard images composed from the ambientCG leaf and branch atlases and Poly Haven pine bark.
 - **Barrier and lamp:** simplified (barrier to 46 triangles, lamp to about 2k), textures at 512 px WebP, meshopt-compressed.
+
+Engine and sound effects are synthesised in code with the Web Audio API (no audio files).
 
 The scripts that produced these files are in [`tools/`](tools/).

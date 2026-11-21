@@ -45,6 +45,8 @@
           <div class="cr"><b>Street lamp</b> — "Street Lamp 01" by Josh Dean, Poly Haven. <i>CC0</i></div>
           <div class="cr"><b>Building facades</b> — Facade 005, 006, 018A, 020A, ambientCG.com. <i>CC0</i></div>
           <div class="cr"><b>Tree leaves &amp; branches</b> — Leaf Set 019, Leaf Set 024, ambientCG.com. <i>CC0</i></div>
+          <div class="cr"><b>Music</b> — "Pure Raceway" by MintoDog, OpenGameArt.org. <i>CC0</i> · re-encoded to 96 kbps. <a href="https://opengameart.org/content/pure-raceway" target="_blank" rel="noopener">source</a></div>
+          <div class="cr"><b>Engine &amp; sound effects</b> — made in code with the Web Audio API (no audio files).</div>
           <div class="cr"><b>Font</b> — "Russo One" by Jovanny Lemonad, Google Fonts. <i>SIL Open Font License</i></div>
           <p class="cr-intro">Full list with links: CREDITS.md in the game's source.</p>
         </div>
@@ -60,6 +62,9 @@
         </div>
         <div id="lives" class="lives"><i></i><i></i><i></i></div>
         <div class="hud-right">
+          <button id="btnMute" class="icon-btn cam-btn mute-btn" aria-label="Sound on, tap to mute">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="#fff"/><path class="wave" d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/><path class="cross" d="M15.5 9.5l5 5M20.5 9.5l-5 5" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>
+          </button>
           <button id="btnCam" class="icon-btn cam-btn" aria-label="Change camera view">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h3l1.6-2.2h6.8L17 7h3a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 20 19H4a1.5 1.5 0 0 1-1.5-1.5v-9A1.5 1.5 0 0 1 4 7z" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.6" fill="none" stroke="#fff" stroke-width="2"/></svg>
           </button>
@@ -166,6 +171,14 @@
           <div class="set-row toggle-row">
             <span class="lbl">SPEED EFFECT</span>
             <button class="toggle" id="tSpeedFx" data-key="speedFx" aria-pressed="true"></button>
+          </div>
+          <label class="set-row"><span class="lbl">SOUND VOLUME <em id="vSfx"></em></span>
+            <input type="range" id="sSfx" data-key="sfx" /></label>
+          <label class="set-row"><span class="lbl">MUSIC VOLUME <em id="vMusic"></em></span>
+            <input type="range" id="sMusic" data-key="music" /></label>
+          <div class="set-row toggle-row">
+            <span class="lbl">MUTE ALL</span>
+            <button class="toggle" id="tMute" data-key="muted" aria-pressed="false"></button>
           </div>
           <p class="set-note" id="chaseNote">Distance &amp; height apply to CHASE and FAR views.</p>
         </div>

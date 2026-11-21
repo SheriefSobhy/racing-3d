@@ -518,3 +518,9 @@ body.tilt-mode .arrow-btn { visibility: hidden; }
 .credits-body a { color: #9fc7ff; }
 .cr-intro { margin: 4px 0 8px; opacity: 0.75; font-size: 12px; }
 .gfx-note { font-family: system-ui, sans-serif; font-size: 10px; color: rgba(255, 255, 255, 0.55) !important; }
+
+/* ---------- Mute button ---------- */
+.mute-btn .cross { display: none; }
+.mute-btn.muted .cross { display: inline; }
+.mute-btn.muted .wave { display: none; }
+.mute-btn.muted { background: rgba(200, 30, 50, 0.45); }

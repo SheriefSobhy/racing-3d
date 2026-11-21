@@ -38,10 +38,12 @@ export const SETTING_RANGES = {
   dist: [4, 12, 0.5],
   height: [1.5, 5, 0.1],
   follow: [1, 12, 0.5],
+  sfx: [0, 100, 1],
+  music: [0, 100, 1],
 };
 
 export const settingsDefaults = () => ({
-  view: 'chase', fov: 62, dist: 7, height: 2.7, follow: 6, shake: true, speedFx: true, gfx: 'high', gfxChosen: false,
+  view: 'chase', fov: 62, dist: 7, height: 2.7, follow: 6, shake: true, speedFx: true, gfx: 'high', gfxChosen: false, sfx: 80, music: 60, muted: false,
 });
 
 const clampSetting = (key, v, d) => {
@@ -66,6 +68,9 @@ export function loadSettings() {
       speedFx: typeof s.speedFx === 'boolean' ? s.speedFx : d.speedFx,
       gfx: s.gfx === 'low' || s.gfx === 'high' ? s.gfx : d.gfx,
       gfxChosen: s.gfxChosen === true,
+      sfx: clampSetting('sfx', s.sfx ?? d.sfx, d.sfx),
+      music: clampSetting('music', s.music ?? d.music, d.music),
+      muted: s.muted === true,
     };
   } catch {
     return d;
